@@ -1,0 +1,222 @@
+syntax = "proto3";
+package geyser;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Yellowstone Dragon's Mouth gRPC geyser service.
+// Compatible with the interface exposed by Helius, Shyft, and Triton.
+// Clients send a SubscribeRequest with account/transaction/slot filters;
+// the server streams SubscribeUpdate messages for every matching event.
+// Auth: providers expect an `x-token` header on the channel metadata.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service Geyser {
+  // Bidirectional stream: client sends filter updates, server sends events.
+  rpc Subscribe(stream SubscribeRequest) returns (stream SubscribeUpdate);
+
+  // Server info (version, feature flags).
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+}
+
+// ── Subscribe ─────────────────────────────────────────────────────────────────
+
+message SubscribeRequest {
+  // Account change subscriptions keyed by an arbitrary client label.
+  map<string, SubscribeRequestFilterAccounts>     accounts     = 1;
+  // Slot update subscriptions.
+  map<string, SubscribeRequestFilterSlots>        slots        = 2;
+  // Transaction subscriptions.
+  map<string, SubscribeRequestFilterTransactions> transactions = 3;
+  // Block subscriptions.
+  map<string, SubscribeRequestFilterBlocks>       blocks       = 4;
+  // Block-metadata-only subscriptions (no transactions).
+  map<string, SubscribeRequestFilterBlocksMeta>   blocks_meta  = 5;
+  // Commitment level for all filters in this request.
+  optional CommitmentLevel commitment = 6;
+  // Account deletion subscriptions.
+  map<string, SubscribeRequestFilterEntry> entry = 7;
+}
+
+message SubscribeRequestFilterAccounts {
+  // If empty, match all accounts.
+  repeated string account  = 1;
+  // Filter by program owner (base58 pubkey).
+  repeated string owner    = 2;
+  // Include data slices — only relevant account data bytes.
+  repeated SubscribeRequestAccountsDataSlice data_slice = 3;
+  // Filter expression (supported by some providers).
+  repeated SubscribeRequestFilterAccountsFilter filters = 4;
+}
+
+message SubscribeRequestFilterAccountsFilter {
+  oneof filter {
+    SubscribeRequestFilterAccountsFilterMemcmp memcmp     = 1;
+    uint64                                     data_size  = 2;
+    bool                                       token_account_state = 3;
+  }
+}
+
+message SubscribeRequestFilterAccountsFilterMemcmp {
+  uint64 offset = 1;
+  oneof data {
+    bytes  bytes  = 2;
+    string base58 = 3;
+    string base64 = 4;
+  }
+}
+
+message SubscribeRequestAccountsDataSlice {
+  uint64 offset = 1;
+  uint64 length = 2;
+}
+
+message SubscribeRequestFilterSlots {
+  // Filter by interslot-timing (e.g. only slots above a threshold).
+  optional bool filter_by_commitment = 1;
+}
+
+message SubscribeRequestFilterTransactions {
+  // true = include votes; false / unset = exclude.
+  optional bool                 vote              = 1;
+  // true = include failed txns.
+  optional bool                 failed            = 2;
+  // Filter by a specific transaction signature (base58).
+  optional string               signature         = 3;
+  // Must include at least one account from this list (base58 pubkeys).
+  repeated string               account_include   = 4;
+  // Must NOT include any account from this list.
+  repeated string               account_exclude   = 5;
+  // All of these accounts must appear.
+  repeated string               account_required  = 6;
+}
+
+message SubscribeRequestFilterBlocks {
+  repeated string account_include             = 1;
+  optional bool   include_transactions        = 2;
+  optional bool   include_accounts            = 3;
+  optional bool   include_entries             = 4;
+}
+
+message SubscribeRequestFilterBlocksMeta {}
+
+message SubscribeRequestFilterEntry {}
+
+// ── Updates streamed from server ──────────────────────────────────────────────
+
+message SubscribeUpdate {
+  // Which client filter label triggered this update.
+  repeated string filters   = 1;
+
+  oneof update_oneof {
+    SubscribeUpdateAccount     account      = 2;
+    SubscribeUpdateSlot        slot         = 3;
+    SubscribeUpdateTransaction transaction  = 4;
+    SubscribeUpdateBlock       block        = 5;
+    SubscribeUpdatePing        ping         = 6;
+    SubscribeUpdatePong        pong         = 7;
+    SubscribeUpdateBlockMeta   block_meta   = 8;
+    SubscribeUpdateEntry       entry        = 9;
+  }
+
+  // Server-side nanosecond timestamp when this update was produced.
+  uint64 created_at = 10;
+}
+
+message SubscribeUpdateAccount {
+  SubscribeUpdateAccountInfo account = 1;
+  uint64                     slot    = 2;
+  bool                       is_startup = 3;
+}
+
+message SubscribeUpdateAccountInfo {
+  bytes  pubkey            = 1;
+  uint64 lamports          = 2;
+  bytes  owner             = 3;
+  bool   executable        = 4;
+  uint64 rent_epoch        = 5;
+  bytes  data              = 6;
+  uint64 write_version     = 7;
+  optional bytes txn_signature = 8;
+}
+
+message SubscribeUpdateSlot {
+  uint64                  slot   = 1;
+  optional uint64         parent = 2;
+  SubscribeUpdateSlotStatus status = 3;
+}
+
+enum SubscribeUpdateSlotStatus {
+  SLOT_STATUS_PROCESSED = 0;
+  SLOT_STATUS_CONFIRMED = 1;
+  SLOT_STATUS_FINALIZED = 2;
+  SLOT_STATUS_FIRST_SHRED_RECEIVED = 3;
+  SLOT_STATUS_COMPLETED = 4;
+  SLOT_STATUS_CREATED_BANK = 5;
+  SLOT_STATUS_DEAD = 6;
+  SLOT_STATUS_OPTIMISTICALLY_CONFIRMED = 7;
+  SLOT_STATUS_ROOT = 8;
+}
+
+message SubscribeUpdateTransaction {
+  SubscribeUpdateTransactionInfo transaction = 1;
+  uint64                         slot        = 2;
+}
+
+message SubscribeUpdateTransactionInfo {
+  bytes             signature  = 1;
+  bool              is_vote    = 2;
+  bytes             transaction = 3; // serialized solana Transaction
+  bytes             meta        = 4; // serialized TransactionStatusMeta
+  uint64            index       = 5;
+}
+
+message SubscribeUpdateBlock {
+  uint64 slot              = 1;
+  string blockhash         = 2;
+  bytes  rewards           = 3;
+  bytes  block_time        = 4;
+  optional uint64 block_height = 5;
+  optional uint64 parent_slot  = 6;
+  string parent_blockhash  = 7;
+  repeated SubscribeUpdateTransactionInfo transactions = 8;
+  repeated SubscribeUpdateEntry           entries      = 9;
+  repeated SubscribeUpdateAccountInfo     accounts     = 10;
+}
+
+message SubscribeUpdateBlockMeta {
+  uint64 slot              = 1;
+  string blockhash         = 2;
+  bytes  rewards           = 3;
+  bytes  block_time        = 4;
+  optional uint64 block_height = 5;
+  optional uint64 parent_slot  = 6;
+  string parent_blockhash  = 7;
+  uint64 executed_transaction_count = 8;
+}
+
+message SubscribeUpdateEntry {
+  uint64 slot              = 1;
+  uint64 index             = 2;
+  uint64 num_hashes        = 3;
+  bytes  hash              = 4;
+  uint64 executed_transaction_count = 5;
+  uint64 starting_transaction_index = 6;
+}
+
+message SubscribeUpdatePing {}
+message SubscribeUpdatePong { int32 id = 1; }
+
+// ── Commitment ────────────────────────────────────────────────────────────────
+
+enum CommitmentLevel {
+  PROCESSED = 0;
+  CONFIRMED = 1;
+  FINALIZED = 2;
+}
+
+// ── Version ───────────────────────────────────────────────────────────────────
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+}

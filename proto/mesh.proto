@@ -1,0 +1,117 @@
+syntax = "proto3";
+package rpcmesh.v1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RpcMesh — gRPC transport layer over JSON-RPC providers
+// Client speaks gRPC; mesh translates and routes to the best JSON-RPC node.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service RpcMesh {
+  // Single routed RPC call — method is declared via boolean flags
+  rpc Send(MeshRequest) returns (MeshResponse);
+
+  // sendTransaction always fires to all healthy nodes simultaneously
+  rpc SendTransaction(TransactionRequest) returns (TransactionResponse);
+
+  // Server-streaming: live node health scores (push every 500ms)
+  rpc WatchHealth(HealthRequest) returns (stream NodeHealth);
+
+  // Server-streaming: routing decisions for dashboard / debugging
+  rpc WatchRouting(RoutingWatchRequest) returns (stream RoutingEvent);
+}
+
+// ─── Client request ──────────────────────────────────────────────────────────
+
+message MeshRequest {
+  // Which RPC methods to call — set the bool to true for each one you need.
+  // Multiple booleans can be true; mesh executes them and merges responses.
+  RpcMethodSet methods = 1;
+
+  // Account filters — passed through to the underlying RPC call
+  repeated string account_include = 2;   // addresses to include in results
+  repeated string account_require = 3;   // addresses that must be present
+
+  // Target slot hint. 0 = latest. Router will prefer nodes at or above this slot.
+  uint64 slot = 4;
+
+  // Optional routing override — leave unset for auto-routing
+  RoutingHint hint = 5;
+}
+
+// Every supported RPC method is a bool flag.
+// Client declares intent; mesh owns all routing logic internally.
+message RpcMethodSet {
+  bool get_account_info                = 1;   // strategy: fastest
+  bool get_balance                     = 2;   // strategy: fastest
+  bool get_multiple_accounts           = 3;   // strategy: fastest
+  bool get_program_accounts            = 4;   // strategy: cheapest
+  bool get_slot                        = 5;   // strategy: lowest_slot_lag
+  bool get_block_height                = 6;   // strategy: lowest_slot_lag
+  bool get_latest_blockhash            = 7;   // strategy: lowest_slot_lag
+  bool get_recent_prioritization_fees  = 8;   // strategy: fastest
+  bool simulate_transaction            = 9;   // strategy: most_reliable
+  bool get_token_accounts_by_owner     = 10;  // strategy: fastest
+  bool get_signatures_for_address      = 11;  // strategy: fastest
+  bool get_transaction                 = 12;  // strategy: fastest
+  bool logs_subscribe                  = 13;  // strategy: stable_ws
+  bool account_subscribe               = 14;  // strategy: stable_ws
+  bool slot_subscribe                  = 15;  // strategy: lowest_slot_lag
+}
+
+message RoutingHint {
+  bool prefer_fastest  = 1;
+  bool prefer_cheapest = 2;
+  bool multipath       = 3;  // force fire to all healthy nodes
+}
+
+// ─── Responses ───────────────────────────────────────────────────────────────
+
+message MeshResponse {
+  bytes  result     = 1;   // JSON-encoded RPC result payload
+  string routed_to  = 2;   // provider node_id that handled this request
+  uint64 latency_ms = 3;
+  uint64 slot       = 4;   // slot the responding node reported
+  string error      = 5;   // empty on success
+}
+
+message TransactionRequest {
+  bytes           serialized_tx   = 1;  // base58/base64 serialized transaction
+  bool            simulate_first  = 2;  // simulate before sending
+  repeated string preferred_nodes = 3;  // optional node_id allowlist
+}
+
+message TransactionResponse {
+  string                 signature = 1;
+  repeated LandingResult results   = 2;  // one entry per node attempted
+}
+
+message LandingResult {
+  string node_id    = 1;
+  bool   success    = 2;
+  uint64 latency_ms = 3;
+  string error      = 4;
+}
+
+// ─── Health streaming ────────────────────────────────────────────────────────
+
+message HealthRequest {}
+
+message NodeHealth {
+  string node_id    = 1;
+  uint64 latency_ms = 2;
+  uint64 slot_lag   = 3;
+  float  error_rate = 4;
+  float  cost_score = 5;
+  string status     = 6;  // "healthy" | "degraded" | "down"
+}
+
+message RoutingWatchRequest {}
+
+message RoutingEvent {
+  string method     = 1;
+  string strategy   = 2;
+  string node_id    = 3;
+  uint64 latency_ms = 4;
+  bool   success    = 5;
+  uint64 slot       = 6;
+}

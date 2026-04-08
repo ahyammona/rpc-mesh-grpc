@@ -1,0 +1,28 @@
+[package]
+name    = "rpc-mesh-grpc"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "rpc-mesh"
+path = "src/main.rs"
+
+[dependencies]
+tonic              = { version = "0.12", features = ["transport", "tls", "tls-native-roots"] }
+prost              = "0.13"
+tokio              = { version = "1",    features = ["full"] }
+tokio-stream       = { version = "0.1",  features = ["sync"] }
+reqwest            = { version = "0.12", features = ["json"] }
+serde              = { version = "1",    features = ["derive"] }
+serde_json         = "1"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3",  features = ["env-filter"] }
+dashmap            = "5"
+config             = "0.14"
+anyhow             = "1"
+futures            = "0.3"
+uuid               = { version = "1",    features = ["v4"] }
+bs58               = "0.5"
+
+[build-dependencies]
+tonic-build = "0.12"
