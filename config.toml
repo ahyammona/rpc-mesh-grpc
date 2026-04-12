@@ -1,44 +1,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# rpc-mesh server config
-# Both RpcMesh (JSON-RPC routing) and Geyser (Yellowstone streaming) services
-# are served on the same port.  Add providers of each kind below.
+# rpc-mesh  ·  SERVER config
+#
+# This file controls only the server's networking and probing behaviour.
+# Provider endpoints are NOT defined here — they live in each client's own
+# config.toml (rpc-client/config.toml, grpc-client/config.toml).
+#
+# To add or change providers, edit the config.toml inside the client you want
+# to run, then restart that client.  The server needs no restart.
+#
+# You can also override any value with an env-var:
+#   MESH_LISTEN_ADDR=0.0.0.0:50051  MESH_PROBE_INTERVAL_MS=250  cargo run
 # ─────────────────────────────────────────────────────────────────────────────
 
-listen_addr       = "[::1]:50051"
+# Address the mesh gRPC server listens on.
+listen_addr = "[::1]:50051"
+
+# How often (ms) the server probes each provider for health / slot lag.
 probe_interval_ms = 500
-
-# ── JSON-RPC providers (kind = "rpc") ─────────────────────────────────────────
-
-[[providers]]
-id   = "helius-rpc"
-kind = "rpc"
-url  = "https://mainnet.helius-rpc.com/?api-key=59fcb181-d11f-4358-b93c-85e8c2e8c298"
-
-[[providers]]
-id   = "shyft"
-kind = "rpc"
-url  = "https://rpc.shyft.to?api_key=Cad55tRqjnAiF8cR"
-
-# ── Yellowstone geyser providers (kind = "geyser") ────────────────────────────
-# These serve Geyser.Subscribe (account / slot / transaction streams).
-# The mesh picks the best one using StableWs + LowestSlotLag scoring and
-# automatically fails over if a stream drops.
-#
-# x_token is required for all production endpoints.
-# For Helius:  your Helius API key (same key as the RPC url above)
-# For Shyft:   your Shyft x-api-key (dashboard → API keys)
-# For Triton:  the token shown in your rpcpool plan details
-
-
-[[providers]]
-id            = "svs"
-kind          = "geyser"
-grpc_endpoint = "https://basic.grpc.solanavibestation.com"
-x_token       = "ba54f882ae6e4c0355837a45416ae676"
-
-[[providers]]
-id            = "shyft-geyser"
-kind          = "geyser"
-grpc_endpoint = "https://grpc.ny.shyft.to"
-x_token       = "dd09cac0-f26c-4544-b653-4f887eeb32d2"
-

@@ -34,7 +34,12 @@ impl Router {
 
     /// Return all healthy nodes — used for Multipath (sendTransaction).
     pub fn all_healthy(&self) -> Vec<String> {
-        self.nodes
+        self.all_healthy_from(&self.nodes)
+    }
+
+    /// Like `all_healthy` but uses an explicit nodes map.
+    pub fn all_healthy_from(&self, nodes: &Arc<DashMap<String, NodeMetrics>>) -> Vec<String> {
+        nodes
             .iter()
             .filter(|e| e.status == NodeStatus::Healthy)
             .map(|e| e.key().clone())
@@ -54,12 +59,23 @@ impl Router {
             })
             .map(|e| e.key().clone())
     }
-       pub fn select_rpc(
+    pub fn select_rpc(
         &self,
         strategy: &RoutingStrategy,
         clients: &HashMap<String, Provider>,
     ) -> Option<String> {
-        self.nodes
+        self.select_rpc_from(strategy, clients, &self.nodes)
+    }
+
+    /// Like `select_rpc` but uses an explicit nodes map — used when ephemeral
+    /// providers (built from request metadata) are not in `self.nodes`.
+    pub fn select_rpc_from(
+        &self,
+        strategy: &RoutingStrategy,
+        clients:  &HashMap<String, Provider>,
+        nodes:    &Arc<DashMap<String, NodeMetrics>>,
+    ) -> Option<String> {
+        nodes
             .iter()
             .filter(|e| {
                 e.status != NodeStatus::Down
@@ -74,15 +90,24 @@ impl Router {
     }
 
     pub fn best_rpc_fallback(&self, clients: &HashMap<String, Provider>) -> Option<String> {
-        self.nodes
+        self.best_rpc_fallback_from(clients, &self.nodes)
+    }
+
+    /// Like `best_rpc_fallback` but uses an explicit nodes map.
+    pub fn best_rpc_fallback_from(
+        &self,
+        clients: &HashMap<String, Provider>,
+        nodes:   &Arc<DashMap<String, NodeMetrics>>,
+    ) -> Option<String> {
+        nodes
             .iter()
             .filter(|e| {
                 e.status != NodeStatus::Down
                     && clients.get(e.key()).map_or(false, |p| p.is_rpc())
             })
             .max_by(|a, b| {
-                composite_score(&a)
-                    .partial_cmp(&composite_score(&b))
+                composite_score(a)
+                    .partial_cmp(&composite_score(b))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|e| e.key().clone())

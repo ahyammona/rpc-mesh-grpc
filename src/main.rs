@@ -34,7 +34,16 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = config::load()?;
-    info!("Loaded {} providers", cfg.providers.len());
+
+    if cfg.providers.is_empty() {
+        tracing::warn!(
+            "No providers configured — create a `providers.toml` next to the binary \
+             (or set MESH_PROVIDERS__0__ID / MESH_PROVIDERS__0__URL env vars). \
+             See src/config.rs for the full format."
+        );
+    } else {
+        info!("Loaded {} provider(s)", cfg.providers.len());
+    }
 
     let nodes: Arc<DashMap<String, NodeMetrics>> = Arc::new(DashMap::new());
 
